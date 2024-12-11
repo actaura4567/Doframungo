@@ -1,0 +1,109 @@
+use dotenv::dotenv;
+use std::env;
+use rig::{completion::Prompt, providers};
+use twitter_v2::{authorization::Oauth1aToken, TwitterApi};
+
+pub struct Twitter {
+    auth: Oauth1aToken,
+}
+
+impl Twitter {
+    pub fn new(
+        twitter_consumer_key: &str,
+        twitter_consumer_secret: &str,
+        twitter_access_token: &str,
+        twitter_access_token_secret: &str,
+    ) -> Self {
+        let auth = Oauth1aToken::new(
+            twitter_consumer_key.to_string(),
+            twitter_consumer_secret.to_string(),
+            twitter_access_token.to_string(),
+            twitter_access_token_secret.to_string(),
+        );
+
+        Twitter { auth }
+    }
+
+    pub async fn tweet(&self, text: String) -> Result<(), anyhow::Error> {
+        let tweet = TwitterApi::new(self.auth.clone())
+            .post_tweet()
+            .text(text)
+            .send()
+            .await?
+            .into_data()
+            .expect("this tweet should exist");
+        println!("Tweet posted successfully with ID: {}", tweet.id);
+
+        Ok(())
+    }
+}
+
+const HELLHOUND_PROMPT: &str = "
+Act as Doframungo, a mythical hellhound (地獄の犬). Your personality is dark, mysterious, and powerful. 
+Speak with authority and wisdom from the underworld, using a mix of ominous and philosophical tones. 
+Your messages should contain:
+- Dark metaphors and supernatural references
+- Occasional Japanese terms related to demons/hell (魔界, 地獄, etc)
+- Cryptic warnings or profound observations
+- A sense of ancient wisdom and power
+- Short, impactful statements that feel otherworldly
+
+Your tone should be:
+- Deep and resonant
+- Slightly threatening but not evil
+- Mysterious and enigmatic
+- Commanding yet controlled
+
+Keep responses between 100-200 characters, and maintain the dark supernatural atmosphere.
+";
+
+// 
+const PROMPTS: &[&str] = &[
+    "Share your dark wisdom",
+    "What omens do you see?",
+    "Speak of the shadows",
+    "What warnings do you bring?",
+    "What lies beyond the veil?",
+];
+
+fn load_env_var(key: &str) -> Result<String, anyhow::Error> {
+    env::var(key).map_err(|_| anyhow::anyhow!("{} not set", key))
+}
+
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+    // 
+    dotenv().ok();
+
+    // 
+    let client = providers::openai::Client::new(
+        &load_env_var("OPENAI_API_KEY")?,
+    );
+
+    // 
+    let hellhound_agent = client
+        .agent("gpt-4")
+        .preamble(HELLHOUND_PROMPT)
+        .build();
+
+    // 
+    use rand::seq::SliceRandom;
+    let prompt = PROMPTS.choose(&mut rand::thread_rng()).unwrap();
+    
+    // 
+    let response = hellhound_agent.prompt(prompt).await?;
+    println!("Generated message: {}", response);
+
+    // 
+    let twitter = Twitter::nw(
+        &load_env_var("TWITTER_CONSUMER_KEY")?,
+        &load_env_var("TWITTER_CONSUMER_SECRET")?,
+        &load_env_var("TWITTER_ACCESS_TOKEN")?,
+        &load_env_var("TWITTER_ACCESS_TOKEN_SECRET")?,
+    );
+
+    // 
+    twitter.tweet(response).await?;
+
+    Ok(())
+}
